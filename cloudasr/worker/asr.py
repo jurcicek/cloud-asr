@@ -45,13 +45,13 @@ class ASR:
 
     def get_final_hypothesis(self):
         if self.decoded_frames == 0:
-            return [(1.0, '')]
+            return [(1.0, '')], None
 
         self.recogniser.finalize_decoding()
         utt_lik, lat = self.recogniser.get_lattice()
         self.reset()
 
-        return self.to_nbest(lat, 10)
+        return self.to_nbest(lat, 10), lat
 
     def change_lm(self, lm):
         pass

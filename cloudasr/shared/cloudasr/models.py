@@ -111,19 +111,21 @@ class RecordingsModel:
         except Exception:
             return []
 
-    def save_recording(self, id, part, chunk_id, model, body, frame_rate, alternatives):
-        (path, url) = self.file_saver.save_wav(chunk_id, model, body, frame_rate)
-        self.save_recording_to_db(id, part, chunk_id, model, path, url, alternatives)
+    def save_recording(self, id, part, chunk_id, model, body, frame_rate, alternatives, lattice):
+        (wav_path, wav_url, lat_path, lat_url) = self.file_saver.save_files(model, body, frame_rate, lattice)
+        self.save_recording_to_db(id, part, chunk_id, model, wav_path, wav_url, lat_path, lat_url, alternatives)
 
-    def save_recording_to_db(self, id, part, chunk_id, model, path, url, alternatives):
+    def save_recording_to_db(self, id, part, chunk_id, model, wav_path, wav_url, lat_path, lat_url, alternatives):
         worker_type = self.worker_types_model.upsert_worker_type(model)
 
         recording = Recording(
             id = chunk_id,
             uuid = id,
             part = part,
-            path = path,
-            url = self.url + url,
+            wav_path = wav_path,
+            wav_url = self.url + wav_url,
+            lat_path = lat_path,
+            lat_url = self.url + lat_url,
             score = alternatives[0]["confidence"],
         )
 
@@ -193,14 +195,22 @@ class FileSaver:
     def __init__(self, path):
         self.path = path
 
-    def save_wav(self, chunk_id, model, body, frame_rate):
+    def save_files(self, model, body, frame_rate, lattice):
         checksum = md5.new(body).hexdigest()
         directory = "%s/%s" % (model, checksum[:2])
         self.create_directories_if_needed(self.path + "/" + directory)
 
-        path = '%s/%s/%s.wav' % (self.path, directory, checksum)
-        url = '/static/data/%s/%s.wav' % (directory, checksum)
+        wav_path = '%s/%s/%s.wav' % (self.path, directory, checksum)
+        wav_url = '/static/data/%s/%s.wav' % (directory, checksum)
+        self.save_wav(wav_path, body, frame_rate)
 
+        lat_path = '%s/%s/%s.lat' % (self.path, directory, checksum)
+        lat_url = '/static/data/%s/%s.lat' % (directory, checksum)
+        self.save_lattice(lat_path, lattice)
+
+        return (wav_path, wav_url, lat_path, lat_url)
+
+    def save_wav(self, path, body, frame_rate):
         wav = wave.open(path, 'w')
         wav.setnchannels(1)
         wav.setsampwidth(2)
@@ -208,7 +218,9 @@ class FileSaver:
         wav.writeframes(body)
         wav.close()
 
-        return (path, url)
+    def save_lattice(self, path, lattice):
+        with open(path, 'wb') as f:
+            f.write(lattice)
 
     def create_directories_if_needed(self, path):
         if not os.path.isdir(path):

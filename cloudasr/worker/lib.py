@@ -1,3 +1,4 @@
+import os
 import audioop
 import wave
 import json
@@ -101,13 +102,13 @@ class Worker:
         self.asr.change_lm(request.new_lm)
         self.asr.recognize_chunk(resampled_pcm)
         current_chunk_id = self.id_generator()
-        final_hypothesis = self.asr.get_final_hypothesis()
+        final_hypothesis, lattice = self.asr.get_final_hypothesis()
         self.send_hypotheses([(current_chunk_id, True, final_hypothesis)])
         self.end_recognition()
 
         self.saver.new_recognition(request.id)
         self.saver.add_pcm(pcm)
-        self.saver.final_hypothesis(current_chunk_id, final_hypothesis)
+        self.saver.final_hypothesis(current_chunk_id, final_hypothesis, lattice)
         self.heartbeat.send("FINISHED")
 
     def handle_online_request(self, request):
@@ -126,10 +127,10 @@ class Worker:
 
             if change == "non-speech" or request.has_next == False or request.new_lm != "":
                 is_final = True
-                hypothesis = self.asr.get_final_hypothesis()
+                hypothesis, lattice = self.asr.get_final_hypothesis()
 
                 self.asr.reset()
-                self.saver.final_hypothesis(current_chunk_id, hypothesis)
+                self.saver.final_hypothesis(current_chunk_id, hypothesis, lattice)
                 self.current_chunk_id = self.id_generator()
 
             if request.new_lm:
@@ -271,10 +272,21 @@ class RemoteSaver:
     def add_pcm(self, pcm):
         self.wav += pcm
 
-    def final_hypothesis(self, chunk_id, final_hypothesis):
+    def final_hypothesis(self, chunk_id, final_hypothesis, lattice):
         if len(self.wav) == 0:
             return
 
-        self.socket.send(createSaverMessage(self.id, self.part, chunk_id, self.model, self.wav, self.frame_rate, final_hypothesis).SerializeToString())
+        lattice = self.get_lattice_contents(lattice)
+
+        self.socket.send(createSaverMessage(self.id, self.part, chunk_id, self.model, self.wav, self.frame_rate, final_hypothesis, lattice).SerializeToString())
         self.wav = b""
         self.part += 1
+
+    def get_lattice_contents(self, lattice):
+        file_name = "tmp.lat"
+        lattice.write(file_name)
+        with open(file_name, "r") as f:
+            contents = f.read()
+        os.remove(file_name)
+
+        return contents

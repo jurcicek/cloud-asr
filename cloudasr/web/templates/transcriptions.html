@@ -2,7 +2,7 @@
 {% block body %}
 <h2>Transcriptions of the recording:</h2>
 
-<audio id="audio-{{ recording["id"] }}" controls src="{{ recording["url"] }}"></audio>
+<audio id="audio-{{ recording["id"] }}" controls src="{{ recording["wav_url"] }}"></audio>
 
 <h3>Best transcription:</h3>
 {% if recording["best_transcription"] %}

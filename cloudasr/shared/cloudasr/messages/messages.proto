@@ -87,5 +87,6 @@ message SaverMessage {
 	required string model = 4;
 	required bytes body = 5;
 	required int32 frame_rate = 6;
-	repeated Alternative alternatives = 7;
+	required bytes lattice = 7;
+	repeated Alternative alternatives = 8;
 }

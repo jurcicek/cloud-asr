@@ -145,7 +145,7 @@ class TestWorker(unittest.TestCase):
 
         self.run_worker(messages)
         self.assertThatDataWasStored({
-            1: {"frame_rate": 16000, "chunks": [{"chunk_id": 0, "pcm": "pcm message", "hypothesis": [(1.0, "Hello World!")]}]}
+            1: {"frame_rate": 16000, "chunks": [{"chunk_id": 0, "pcm": "pcm message", "hypothesis": [(1.0, "Hello World!")], "lattice": "Lattice"}]}
         })
 
     def test_worker_saves_pcm_data_from_online_request_in_original_frame_rate(self):
@@ -157,7 +157,7 @@ class TestWorker(unittest.TestCase):
 
         self.run_worker(messages)
         self.assertThatDataWasStored({
-            1: {"frame_rate": 44100, "chunks": [{"chunk_id": 0, "pcm": "message 1message 2message 3", "hypothesis": [(1.0, "Hello World!")]}]}
+            1: {"frame_rate": 44100, "chunks": [{"chunk_id": 0, "pcm": "message 1message 2message 3", "hypothesis": [(1.0, "Hello World!")], "lattice": "Lattice"}]}
         })
 
     def test_worker_forwards_pcm_data_to_vad(self):
@@ -264,8 +264,8 @@ class TestWorker(unittest.TestCase):
         self.run_worker(messages)
         self.assertThatDataWasStored({
             1: {"frame_rate": 44100, "chunks": [
-                {"chunk_id": 0, "pcm": "speech 1", "hypothesis": [(1.0, "Hello World!")]},
-                {"chunk_id": 0, "pcm": "speech 2", "hypothesis": [(1.0, "Hello World!")]}
+                {"chunk_id": 0, "pcm": "speech 1", "hypothesis": [(1.0, "Hello World!")], "lattice": "Lattice"},
+                {"chunk_id": 0, "pcm": "speech 2", "hypothesis": [(1.0, "Hello World!")], "lattice": "Lattice"}
             ]}
         })
 
@@ -316,7 +316,7 @@ class TestWorker(unittest.TestCase):
         self.run_worker(messages)
         self.assertThatDataWasStored({
             1: {"frame_rate": 44100, "chunks": [
-                {"chunk_id": 0, "pcm": "buffered chunk", "hypothesis": [(1.0, "Hello World!")]},
+                {"chunk_id": 0, "pcm": "buffered chunk", "hypothesis": [(1.0, "Hello World!")], "lattice": "Lattice"},
             ]}
         })
 
@@ -432,6 +432,7 @@ class RemoteSaverTest(unittest.TestCase):
         self.model = "en-GB"
         self.chunk = b"chunk"
         self.frame_rate = 44100
+        self.lattice = LatticeDummy("Lattice")
         self.socket = SocketSpy()
         self.saver = RemoteSaver(self.socket, self.model)
 
@@ -439,7 +440,7 @@ class RemoteSaverTest(unittest.TestCase):
         self.saver.new_recognition(createUniqueID(self.id), self.frame_rate)
         self.saver.add_pcm(self.chunk)
         self.saver.add_pcm(self.chunk)
-        self.saver.final_hypothesis(self.chunk_id, self.final_hypothesis)
+        self.saver.final_hypothesis(self.chunk_id, self.final_hypothesis, self.lattice)
 
         message = parseSaverMessage(self.socket.sent_message)
         self.assertEquals(self.id, uniqId2Int(message.id))
@@ -447,14 +448,15 @@ class RemoteSaverTest(unittest.TestCase):
         self.assertEquals(self.model, message.model)
         self.assertEquals(self.chunk * 2, message.body)
         self.assertEquals(self.frame_rate, message.frame_rate)
+        self.assertEquals(self.lattice.value, message.lattice)
         self.assertEquals([{"confidence": self.final_hypothesis[0][0], "transcript": self.final_hypothesis[0][1]}], alternatives2List(message.alternatives))
 
     def test_saver_sends_all_parts(self):
         self.saver.new_recognition(createUniqueID(self.id), self.frame_rate)
         self.saver.add_pcm(self.chunk)
-        self.saver.final_hypothesis(self.chunk_id, self.final_hypothesis)
+        self.saver.final_hypothesis(self.chunk_id, self.final_hypothesis, self.lattice)
         self.saver.add_pcm(self.chunk)
-        self.saver.final_hypothesis(self.chunk_id, self.final_hypothesis)
+        self.saver.final_hypothesis(self.chunk_id, self.final_hypothesis, self.lattice)
 
         message = parseSaverMessage(self.socket.sent_messages[0])
         self.assertEquals(0, message.part)
@@ -465,10 +467,10 @@ class RemoteSaverTest(unittest.TestCase):
     def test_saver_resets_after_final_hypothesis(self):
         self.saver.new_recognition(createUniqueID(self.id))
         self.saver.add_pcm(self.chunk)
-        self.saver.final_hypothesis(self.chunk_id, self.final_hypothesis)
+        self.saver.final_hypothesis(self.chunk_id, self.final_hypothesis, self.lattice)
         self.saver.new_recognition(createUniqueID(self.id + 1))
         self.saver.add_pcm(self.chunk)
-        self.saver.final_hypothesis(self.chunk_id, self.final_hypothesis)
+        self.saver.final_hypothesis(self.chunk_id, self.final_hypothesis, self.lattice)
 
         message = parseSaverMessage(self.socket.sent_message)
         self.assertEquals(self.id + 1, uniqId2Int(message.id))
@@ -476,7 +478,7 @@ class RemoteSaverTest(unittest.TestCase):
 
     def test_saver_doesnt_save_anything_when_wav_is_empty(self):
         self.saver.new_recognition(createUniqueID(self.id))
-        self.saver.final_hypothesis(self.chunk_id, self.final_hypothesis)
+        self.saver.final_hypothesis(self.chunk_id, self.final_hypothesis, self.lattice)
 
         self.assertEquals(self.socket.sent_message, None)
 
@@ -496,7 +498,7 @@ class ASRSpy:
         return self.interim_hypothesis
 
     def get_final_hypothesis(self):
-        return self.final_hypothesis
+        return self.final_hypothesis, "Lattice"
 
     def change_lm(self, lm):
         self.lm = lm
@@ -543,9 +545,10 @@ class SaverSpy:
     def add_pcm(self, pcm):
         self.current_chunk["pcm"] += pcm
 
-    def final_hypothesis(self, chunk_id, final_hypothesis):
+    def final_hypothesis(self, chunk_id, final_hypothesis, lattice):
         self.current_chunk["chunk_id"] = chunk_id
         self.current_chunk["hypothesis"] = final_hypothesis
+        self.current_chunk["lattice"] = lattice
         self.saved_data[self.id]["chunks"].append(self.current_chunk)
 
         self.current_chunk = {"chunk_id": "", "pcm": "", "hypothesis": ""}
@@ -574,6 +577,15 @@ class VADDummy:
 
     def reset(self):
         self.resetted = True
+
+class LatticeDummy:
+
+    def __init__(self, value):
+        self.value = value
+
+    def write(self, f):
+        with open(f, 'w') as f:
+            f.write(self.value)
 
 
 class IDGeneratorDummy:

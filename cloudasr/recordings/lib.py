@@ -37,6 +37,7 @@ class RecordingsSaver:
             model = recording.model
             body = recording.body
             frame_rate = recording.frame_rate
+            lattice = recording.lattice
             alternatives = alternatives2List(recording.alternatives)
 
-            self.model.save_recording(id, part, chunk_id, model, body, frame_rate, alternatives)
+            self.model.save_recording(id, part, chunk_id, model, body, frame_rate, alternatives, lattice)
